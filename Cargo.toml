@@ -9,7 +9,9 @@ edition = "2021"
 panic = "abort"
 
 [dependencies]
+chrono = { version = "0.4.32", features = ["serde"] }
 clap = { version = "4.4.12", features = ["derive", "cargo"] }
+humantime = "2.1.0"
 prettytable-rs = "0.10.0"
 reqwest = { version = "0.11.23", features = ["blocking", "native-tls"] }
 serde = { version = "1.0.194", features = ["derive"] }

@@ -1,3 +1,7 @@
+#![deny(clippy::all)]
+
+use chrono::{DateTime, Utc};
+use humantime::format_duration;
 use prettytable::{row, Table};
 use reqwest;
 use serde::Deserialize;
@@ -93,36 +97,29 @@ impl Client {
     }
 
     pub async fn images(&self) -> reqwest::Result<()> {
-        match self.get_catalog().await {
-            Ok(catalog) => {
-                let mut table = Table::new();
-                table.add_row(row!["REPOSITORY", "TAG", "IMAGE ID", "CREATED", "SIZE"]);
-                for c in catalog.repositories.unwrap_or_default() {
-                    match self.get_tags(&c).await {
-                        Ok(tag_info) => {
-                            for t in tag_info.tags.unwrap_or_default() {
-                                match self.get_image_info(&c, &t).await {
-                                    Ok((image_id, created, image_size)) => {
-                                        let created_sec: Vec<&str> = created.split(".").collect();
-                                        table.add_row(row![
-                                            c,
-                                            t,
-                                            &image_id[..12],
-                                            created_sec[0],
-                                            format!("{:.2}GB", image_size)
-                                        ]);
-                                    }
-                                    Err(err) => eprintln!("Error: {}", err),
-                                }
-                            }
-                        }
-                        Err(err) => eprintln!("Error: {}", err),
-                    }
-                }
-                table.printstd();
+        let catalog = self.get_catalog().await?;
+        let mut table = Table::new();
+        table.add_row(row!["REPOSITORY", "TAG", "IMAGE ID", "CREATED", "SIZE"]);
+        for repository in catalog.repositories.unwrap_or_default() {
+            let tag_info = self.get_tags(&repository).await?;
+            for tag in tag_info.tags.unwrap_or_default() {
+                let (image_id, created, image_size) =
+                    self.get_image_info(&repository, &tag).await?;
+                let human_time = to_human_time(&created).unwrap();
+                let parts: Vec<&str> = human_time.split_whitespace().collect();
+                let extracted_part = parts.get(0).cloned().unwrap_or_else(|| human_time.as_str());
+                let created_from = format!("{} ago", extracted_part);
+                table.add_row(row![
+                    repository,
+                    tag,
+                    &image_id[..12],
+                    created_from,
+                    format!("{:.2}GB", image_size),
+                ]);
             }
-            Err(err) => eprintln!("Error: {}", err),
         }
+
+        table.printstd();
         Ok(())
     }
 
@@ -198,6 +195,10 @@ impl Client {
             .get(&url)
             .header(
                 "Accept",
+                "application/vnd.docker.distribution.manifest.list.v2+json",
+            )
+            .header(
+                "Accept",
                 "application/vnd.docker.distribution.manifest.v2+json",
             )
             .send()
@@ -209,5 +210,23 @@ impl Client {
         let digest: Vec<&str> = mani.config.digest.split(":").collect();
         let image_id = digest.last().unwrap();
         Ok(((*image_id).to_string(), created_time, size_in_gb))
+    }
+}
+
+fn to_human_time(time_str: &str) -> Result<String, Box<dyn std::error::Error>> {
+    let parsed_time = DateTime::parse_from_rfc3339(time_str);
+    match parsed_time {
+        Ok(datetime) => {
+            let duration = Utc::now().signed_duration_since(datetime);
+            let std_duration = duration
+                .to_std()
+                .expect("Failed to convert to std::time::Duration");
+            let human_readable_time = format_duration(std_duration);
+            Ok(format!("{}", human_readable_time))
+        }
+        Err(err) => {
+            eprintln!("Error parsing time: {}", err);
+            Err(err.into())
+        }
     }
 }

@@ -1,3 +1,5 @@
+#![deny(clippy::all)]
+
 mod client;
 use clap::{Parser, Subcommand};
 use client::Client;

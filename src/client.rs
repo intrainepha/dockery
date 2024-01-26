@@ -3,6 +3,7 @@
 use chrono::{DateTime, Utc};
 use humantime::format_duration;
 use prettytable::{row, Table};
+use regex::Regex;
 use reqwest;
 use serde::Deserialize;
 use std::env;
@@ -99,6 +100,7 @@ impl Client {
     pub async fn images(&self) -> reqwest::Result<()> {
         let catalog = self.get_catalog().await?;
         let mut table = Table::new();
+        let re = Regex::new(r"(\d)([a-zA-Z])").unwrap();
         table.add_row(row!["REPOSITORY", "TAG", "IMAGE ID", "CREATED", "SIZE"]);
         for repository in catalog.repositories.unwrap_or_default() {
             let tag_info = self.get_tags(&repository).await?;
@@ -113,7 +115,7 @@ impl Client {
                     repository,
                     tag,
                     &image_id[..12],
-                    created_from,
+                    re.replace_all(&created_from, "$1 $2"),
                     format!("{:.2}GB", image_size),
                 ]);
             }
